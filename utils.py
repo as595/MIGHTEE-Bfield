@@ -10,7 +10,7 @@ import warnings
 # -------------------------------------------------------------------------------
 # -------------------------------------------------------------------------------
 
-def read_catalogue(catfile, field_centre):
+def read_catalogue(catfile, field_centre, cols=['ra','dec']):
 
     warnings.filterwarnings('ignore', category=AstropyWarning)
     dat = Table.read(catfile, format='fits')
@@ -18,7 +18,7 @@ def read_catalogue(catfile, field_centre):
     field = catfile.split('/')[-2]
     dat.add_column(field,name='pointing')
 
-    coord = SkyCoord(dat['ra'],dat['dec'],unit="deg")
+    coord = SkyCoord(dat[cols[0]],dat[cols[1]],unit="deg")
     distr = coord.separation(field_centre).degree
     dat.add_column(distr,name='distance')
     
@@ -30,6 +30,10 @@ def read_catalogue(catfile, field_centre):
 # updated from Russ' version:
 
 def merge_cats(catlist, distol=10.):
+
+    """
+    distol : distance matching tolerance [arcsec]
+    """
 
     ncat = len(catlist)
     nmatches = 0
@@ -51,19 +55,60 @@ def merge_cats(catlist, distol=10.):
                 if j>=len(catlist[c1]['ra'].values): break
 
     print("Found {} matches".format(nmatches))
-    df = pd.concat(catlist)
+    df = pd.concat(catlist).reset_index()
+            
+    return df
+
+# -------------------------------------------------------------------------------
+# updated from Russ' matching function:
+
+def match_z(dfz, df, distol=10.):
+
+    """
+    distol : distance matching tolerance [arcsec]
+    """
+
+    nmatches = 0
+    j=0
+    while True:
+        found,n,dra,ddec = a_in_b(df.iloc[[j]],dfz,distol,cols1=['ra','dec'],cols2=['RADIORA','RADIODEC'])
+        if found:
+            nmatches = nmatches + 1
+            #print(dfz.iloc[[n]]['COS_best_z_note_v5'].values[0])
+            if dfz.iloc[[n]]['COS_best_z_note_v5'].values[0]=='photz':
+                print('---')
+                print(df.iloc[[j]]['phot_z'].values, dfz.iloc[[n]]['COS_best_z_v5'].values)
+                df.loc[df.index[j], 'phot_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5'].values
+                print(df.iloc[[j]]['phot_z'].values)
+                #df.iloc[[j]]['phot_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
+                #df.iloc[[j]]['best_z'] = dfz.iloc[[n]]['COS_best_z_v5']
+                #df.iloc[[j]]['best_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
+                j+=1
+            else:
+                print('---')
+                print(df.iloc[[j]]['spec_z'].values, dfz.iloc[[n]]['COS_best_z_v5'].values)
+                df.loc[df.index[j], 'spec_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5'].values
+                print(df.iloc[[j]]['spec_z'].values)
+                #df.iloc[[j]]['spec_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
+                #df.iloc[[j]]['best_z'] = dfz.iloc[[n]]['COS_best_z_v5']
+                #df.iloc[[j]]['best_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
+        
+        j+=1
+        if j>=len(df['ra'].values): break
+
+    print("Found {} matches".format(nmatches))
             
     return df
 
 # -------------------------------------------------------------------------------
 # from Russ:
 
-def a_in_b(a,b,distol):
+def a_in_b(a,b,distol,cols1=['ra','dec'],cols2=['ra','dec']):
     found = False
     dis = []; dras = []; ddecs = []
-    for i in range(len(b['ra'].values)):   
-        dd = 3600.0*(b['dec'].values[i] - a['dec'].values)
-        dr = 3600.0*(b['ra'].values[i] - a['ra'].values)*np.cos(a['dec'].values*np.pi/180.0)
+    for i in range(len(b[cols2[0]].values)):   
+        dd = 3600.0*(b[cols2[1]].values[i] - a[cols1[1]].values)
+        dr = 3600.0*(b[cols2[0]].values[i] - a[cols1[0]].values)*np.cos(a[cols1[1]].values*np.pi/180.0)
         dis.append(np.sqrt(dd*dd + dr*dr))
         dras.append(dr)
         ddecs.append(dd)

@@ -4,6 +4,8 @@ from astropy.coordinates import SkyCoord
 from utils import *
 from grm_utils import *
 
+verbose = True
+
 # -----------------------------------------------------------
 # step 1: read catalogues
 xmm12_file = '/Users/ascaife/DATA/MIGHTEE/catalog/XMMLSS/XMMLSS_12/XMMLSS_12_1538856059_1539286252_pol_detections.fits'
@@ -24,18 +26,34 @@ cosmos = read_catalogue(cosmos_file, cosmosc)
 
 # -----------------------------------------------------------
 # step 2: merge catalogues
-mightee = merge_cats([xmm12, xmm13, xmm14])
+if verbose: print("--- \n >>> Merging catalogues")
+
+mightee = merge_cats([xmm12, xmm13, xmm14, cosmos])
 print('# of sources in merged catalogue: {}'.format(mightee.shape[0]))
 
 # -----------------------------------------------------------
 # step 2a: Russ' filter to remove XMMLSS filament:
+if verbose: print("--- \n >>> Filtering XMMLSS filament")
+
 polflux_limit = 70.0; frac_p_limit = 30.0
-mightee = mightee[mightee['pol'] > polflux_limit
-mightee = mightee[mightee['P/I'] < frac_p_limit
+idx = mightee[(mightee['pol'] < polflux_limit) & (mightee['P/I'] > frac_p_limit)].index
+mightee = mightee.drop(index = idx)
 print('# of sources in filtered catalogue: {}'.format(mightee.shape[0]))
-stop
+
+# -----------------------------------------------------------
+# step 2b: match spectroscopic redshifts from Catherine/Imogen
+if verbose: print("--- \n >>> Matching z_spec")
+
+cosmos_zcat = '/Users/ascaife/SRC/GITHUB/MIGHTEE-Bfield/redshifts/COSMOSXMATCH+multiinfo_v5.fits'
+cosmosc = SkyCoord(35.84167,-4.83306,unit="deg") # update this
+cosmos_z = read_catalogue(cosmos_zcat, cosmosc, cols=['RADIORA','RADIODEC'])
+
+mightee = match_z(cosmos_z, mightee)
+
 # -----------------------------------------------------------
 # step 3: redshift and galactic latitude filtering
+if verbose: print("--- \n >>> Filtering redshift and gal lat")
+
 mightee = filter_z(mightee, has_z=True, spec_z=False)
 print('# of sources (after z filter): {}'.format(mightee.shape[0]))
 
@@ -46,7 +64,7 @@ n, bins, patches = pl.hist(mightee['best_z'], density=False, bins=20, edgecolor=
 pl.xlabel('Redshift ($z$)')
 pl.ylabel('Frequency')
 pl.savefig('plots/mightee_z.png')
-pl.show()
+#pl.show()
 
 # add columns for (l,b)
 mightee['l'], mightee['b'] = j2000_to_gal(mightee['ra'].values, mightee['dec'].values)
@@ -57,6 +75,8 @@ print('# of sources (after b filter): {}'.format(mightee.shape[0]))
 
 # -----------------------------------------------------------
 # step 4: get GRMs
+if verbose: print("--- \n >>> Getting GRM values")
+
 ra = np.array(mightee['ra'].values)
 dec= np.array(mightee['dec'].values)
 
@@ -79,10 +99,12 @@ pl.plot([-10,10],[-10,10], ls=':')
 pl.xlabel('GRM [direct]')
 pl.ylabel('GRM [1 degree median]')
 pl.savefig('./plots/grm.png')
-pl.show()
+#pl.show()
 
 # -----------------------------------------------------------
 # step 5: subtract off GRMs
+if verbose: print("--- \n >>> Subtracting GRMs")
+
 rm      = mightee['RM'].values
 rm_err  = mightee['RM_err'].values
 grm     = mightee['GRM1'].values      # use 1 deg median
@@ -124,10 +146,12 @@ n, bins, patches = pl.hist(rrm, density=False, range=(-25,25), bins=50, edgecolo
 pl.xlabel('RRM')
 pl.ylabel('Frequency')
 pl.savefig('./plots/mightee_rrms.png')
-pl.show()
+#pl.show()
 
 # -----------------------------------------------------------
 # step 6: calculate f_excess
+if verbose: print("--- \n >>> Calculating f_excess")
+
 rm      = mightee['RM'].values
 rm_err  = mightee['RM_err'].values
 grm     = mightee['GRM_FS'].values      # use 1 deg median
@@ -159,10 +183,12 @@ n, bins, patches = pl.hist(f_excess, density=False, range=(-50,50), bins=20, edg
 pl.xlabel(r'$f_{excess}$')
 pl.ylabel('Frequency')
 pl.savefig('./plots/mightee_fexcess.png')
-pl.show()
+#pl.show()
 
 # -----------------------------------------------------------
 # step 7: 
+if verbose: print("--- \n >>> Making redshift bins")
+
 rm      = mightee['RM'].values
 rm_err  = mightee['RM_err'].values
 grm     = mightee['GRM_FS'].values      # use 1 deg median
@@ -197,7 +223,7 @@ pl.xlabel('z')
 pl.ylabel('RRM [rad/m^2]')
 pl.ylim(-40,40)
 pl.savefig('./plots/mightee_rrm_z.png')
-pl.show()
+#pl.show()
 
 pl.scatter(z, np.abs(rrm), s=1)
 pl.errorbar(mu_bin, sig_rrm, yerr=ste_sig, xerr=0.5*np.diff(bins), c='red', ls='', capsize=3.)
@@ -205,4 +231,4 @@ pl.xlabel('z')
 pl.ylabel('RRM rms [rad/m^2]')
 pl.ylim(0,40)
 pl.savefig('./plots/mightee_rrmsig_z.png')
-pl.show()
+#pl.show()
