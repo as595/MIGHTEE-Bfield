@@ -130,3 +130,7 @@ faradaysky/
 plots/
 
 redshifts/
+
+.DS_Store
+
+*.ipynb

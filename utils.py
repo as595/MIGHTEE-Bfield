@@ -74,24 +74,17 @@ def match_z(dfz, df, distol=10.):
         found,n,dra,ddec = a_in_b(df.iloc[[j]],dfz,distol,cols1=['ra','dec'],cols2=['RADIORA','RADIODEC'])
         if found:
             nmatches = nmatches + 1
-            #print(dfz.iloc[[n]]['COS_best_z_note_v5'].values[0])
-            if dfz.iloc[[n]]['COS_best_z_note_v5'].values[0]=='photz':
-                print('---')
-                print(df.iloc[[j]]['phot_z'].values, dfz.iloc[[n]]['COS_best_z_v5'].values)
-                df.loc[df.index[j], 'phot_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5'].values
-                print(df.iloc[[j]]['phot_z'].values)
-                #df.iloc[[j]]['phot_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
-                #df.iloc[[j]]['best_z'] = dfz.iloc[[n]]['COS_best_z_v5']
-                #df.iloc[[j]]['best_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
+            if dfz.loc[dfz.index[n], 'COS_best_z_note_v5']=='photz':
+                df.loc[df.index[j], 'phot_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5']
+                df.loc[df.index[j], 'phot_z_uncertainty'] = dfz.loc[dfz.index[n], 'COS_best_z_uncertainty_v5']
+                df.loc[df.index[j], 'best_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5']
+                df.loc[df.index[j], 'best_z_uncertainty'] = dfz.loc[dfz.index[n], 'COS_best_z_uncertainty_v5']
                 j+=1
             else:
-                print('---')
-                print(df.iloc[[j]]['spec_z'].values, dfz.iloc[[n]]['COS_best_z_v5'].values)
-                df.loc[df.index[j], 'spec_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5'].values
-                print(df.iloc[[j]]['spec_z'].values)
-                #df.iloc[[j]]['spec_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
-                #df.iloc[[j]]['best_z'] = dfz.iloc[[n]]['COS_best_z_v5']
-                #df.iloc[[j]]['best_z_uncertainty'] = dfz.iloc[[n]]['COS_best_z_uncertainty_v5']
+                df.loc[df.index[j], 'spec_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5']
+                df.loc[df.index[j], 'spec_z_uncertainty'] = dfz.loc[dfz.index[n], 'COS_best_z_uncertainty_v5']
+                df.loc[df.index[j], 'best_z'] = dfz.loc[dfz.index[n], 'COS_best_z_v5']
+                df.loc[df.index[j], 'best_z_uncertainty'] = dfz.loc[dfz.index[n], 'COS_best_z_uncertainty_v5']
         
         j+=1
         if j>=len(df['ra'].values): break
@@ -124,6 +117,7 @@ def filter_z(df, has_z=True, spec_z=True, zmax=2.):
 
     if has_z:
         df = df.loc[df['best_z'] != -99]
+        df = df.loc[df['best_z'] != 0.]
     
     if spec_z:
         df = df.loc[df['spec_z'] != -99]
@@ -191,15 +185,65 @@ def standard_error_on_variance(std, n):
 
 # -------------------------------------------------------------------------------
 
-def bin_z(z, nbins=7):
+def bin_z(z, nbins=7, bintype='width'):
 
-    d_z = 2./nbins
-    bins = np.arange(0,(nbins+1)*d_z,d_z)
-    mu_bin = 0.5*np.diff(bins)+bins[:-1]
-    idx_bin = np.digitize(z, bins)
+    if bintype=='number':
+        nsrc = len(z)
+        bsrc = int(nsrc/nbins)
+        print("# sources per bin: {}".format(bsrc))
+        idx_sorted = np.argsort(z)
+        idx_bin_tmp = (np.arange(0,nsrc) / bsrc).astype(int) + 1
+        idx_bin = np.zeros(nsrc, dtype=int)
+        idx_bin[idx_sorted] = idx_bin_tmp
+        idx_bin[np.where(idx_bin>(nbins))] = nbins
+        
+        bins = np.zeros(nbins+1)
+        for i in range(1,nbins+1):
+            bins[i-1] = np.min(z[np.where(idx_bin==i)])
+        bins[nbins] = np.max(z)
+        n_bin = [len(z[idx_bin==j]) for j in range(1, nbins+1)]
 
-    n_bin = [len(z[idx_bin==j]) for j in range(1, len(bins))]
+    elif bintype=='width':
+        d_z = 2./nbins
+        bins = np.arange(0,(nbins+1)*d_z,d_z)
+        #mu_bin = 0.5*np.diff(bins)+bins[:-1]
+        idx_bin = np.digitize(z, bins)
+
+        n_bin = [len(z[idx_bin==j]) for j in range(1, len(bins))]
+    else:
+        raise ValueError('[bin_z] bintype option not recognised')
 
     return bins, idx_bin, n_bin
+
+# -------------------------------------------------------------------------------
+
+def bin_rrm(rrm, bins, idx_bin, n_bin):
+    
+    sig_rrm= [np.std(rrm[idx_bin == j]) for j in range(1, len(bins))]
+    ste_sig = standard_error_on_stdev(sig_rrm, n_bin)
+
+    return sig_rrm, ste_sig
+
+# -------------------------------------------------------------------------------
+
+def zdep(rrm, z, model='C1'):
+    
+    if model=='C1':
+        rrm0 = rrm*(1+z)**2
+    elif model=='C2':
+        rrm0 = rrm*((1+z)**3-1)
+        rrm0/= 3*z
+    elif model=='C3':
+        rrm0 = rrm*(1+z)
+    
+    return rrm0
+
+# -------------------------------------------------------------------------------
+
+def log_likelihood_mbf(theta, x, y, yerr):
+    m, b, log_f = theta
+    model = m * x + b
+    sigma2 = yerr**2 + model**2 * np.exp(2 * log_f)
+    return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(sigma2))
 
 # -------------------------------------------------------------------------------
