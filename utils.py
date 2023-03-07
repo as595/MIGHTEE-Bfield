@@ -247,3 +247,17 @@ def log_likelihood_mbf(theta, x, y, yerr):
     return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(sigma2))
 
 # -------------------------------------------------------------------------------
+
+def N_f(z):
+    return -1.08*z**2+17.89*z-0.37
+
+# -------------------------------------------------------------------------------
+
+def log_likelihood_fil(theta, x, y, yerr):
+    m, b, log_f = theta
+    model = m * N_f(x)**0.5 + b
+    sigma2 = yerr**2 + model**2 * np.exp(2 * log_f)
+    return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(sigma2))
+
+# -------------------------------------------------------------------------------
+

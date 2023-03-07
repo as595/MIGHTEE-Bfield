@@ -6,11 +6,19 @@ from scipy import stats
 from utils import *
 from grm_utils import *
 
+# User inputs:
+# -----------------------------------------------------------
+# -----------------------------------------------------------
+
 verbose = True
-bintype = 'number'  # ['number', 'width']
+bintype = 'width'  # ['number', 'width']
 grmtype = 'grm1'    # ['grm1', 'direct]
 
+# -----------------------------------------------------------
+# -----------------------------------------------------------
 
+
+# Main code [no changes below here]:
 # -----------------------------------------------------------
 # step 1: read catalogues
 xmm12_file = '/Users/ascaife/DATA/MIGHTEE/catalog/XMMLSS/XMMLSS_12/XMMLSS_12_1538856059_1539286252_pol_detections.fits'
@@ -60,9 +68,6 @@ mightee = match_z(cosmos_z, mightee)
 # -----------------------------------------------------------
 # step 3: redshift and galactic latitude filtering
 if verbose: print("--- \n >>> Filtering by redshift")
-
-
-print(mightee.loc[mightee['best_z'] == 0])
 
 mightee = filter_z(mightee, has_z=True, spec_z=False)
 print('# of sources (after z filter): {}'.format(mightee.shape[0]))
@@ -241,8 +246,8 @@ pl.close()
 #pl.show()
 
 # -----------------------------------------------------------
-# step 7a: 
-if verbose: print("--- \n >>> Making redshift bins (equal width)")
+# step 7: 
+if verbose: print("--- \n >>> Making redshift bins")
 
 rm      = mightee['RM'].values
 rm_err  = mightee['RM_err'].values
@@ -267,7 +272,7 @@ z = z[np.where(np.abs(rrm)<=2*std)]
 rrm = rrm[np.where(np.abs(rrm)<=2*std)]
 
 # make redshift bins:
-bins, idx_bin, n_bin = bin_z(z, nbins=7, bintype='width')
+bins, idx_bin, n_bin = bin_z(z, nbins=7, bintype=bintype)
 mu_bin = 0.5*np.diff(bins)+bins[:-1]
 
 # -----------------------------------------------------------------------------
@@ -317,107 +322,7 @@ pl.ylabel(r'RRM rms [rad m$^{-2}$')
 pl.ylim(0,40)
 #pl.title("Figure 4 (bottom)")
 
-pl.savefig("./plots/mightee_rrm_z_width.png")
-pl.close()
-
-# create table:
-d = {'z': mu_bin, 'n_src': n_bin, 'RRM_mu': mu_rrm, 'RRM_mu_err': ste_rrm, 'RRM_rms': sig_rrm, 'RRM_rms_err': ste_sig}
-df = pd.DataFrame(data=d)
-df = df.style.format(precision=2)
-if verbose: print(df.to_latex())
-
-# fit trend line:
-np.random.seed(42)
-nll = lambda *args: -log_likelihood_mbf(*args)
-initial = np.array([0., 10., 1.]) + 0.1 * np.random.randn(3)
-soln = minimize(nll, initial, args=(mu_bin, mu_rrm, ste_sig))
-m_ml, b_ml, log_f_ml = soln.x
-ih = soln.hess_inv
-
-if verbose: 
-    print("Maximum likelihood estimates of fit to mean RRM:")
-    print("m = {:.3f}+/-{:.3f}".format(m_ml, np.sqrt(ih[0,0])))
-    print("b = {:.3f}+/-{:.3f}".format(b_ml, np.sqrt(ih[1,1])))
-    print("f = {:.3f}+/-{:.3f}".format(np.exp(log_f_ml), np.sqrt(ih[2,2])))
-
-# -----------------------------------------------------------
-# step 7b: 
-if verbose: print("--- \n >>> Making redshift bins (equal number)")
-
-rm      = mightee['RM'].values
-rm_err  = mightee['RM_err'].values
-z       = mightee['best_z'].values
-
-if grmtype=='grm1':
-    grm     = mightee['GRM1'].values      # use 1 deg median
-    grm_err = mightee['GRM1err'].values   # use 1 deg median
-elif grmtype=='direct':
-    grm     = mightee['GRM_FS'].values      # use 1 deg median
-    grm_err = mightee['GRM_FSerr'].values   # use 1 deg median
-
-rrm = rm - grm
-rrm_err = np.sqrt(rm_err**2 + grm_err**2)
-
-# remove data outside 2 sigma:
-std = np.std(rrm)
-grm_err = grm_err[np.where(np.abs(rrm)<=2*std)]
-rm_err = rm_err[np.where(np.abs(rrm)<=2*std)]
-rrm_err = rrm_err[np.where(np.abs(rrm)<=2*std)]
-z = z[np.where(np.abs(rrm)<=2*std)]
-rrm = rrm[np.where(np.abs(rrm)<=2*std)]
-
-# make redshift bins:
-bins, idx_bin, n_bin = bin_z(z, nbins=7, bintype='number')
-mu_bin = 0.5*np.diff(bins)+bins[:-1]
-
-# -----------------------------------------------------------------------------
-# get the mean RRM in each bin:
-mu_rrm = np.array([np.average(rrm[idx_bin == j]) for j in range(1, len(bins))])
-# get the uncorrected rms RRM in each bin:
-sig_rrm_obs= np.array([np.std(rrm[idx_bin == j]) for j in range(1, len(bins))])
-# get the standard error on the mean for each bin:
-ste_rrm= sig_rrm_obs/np.sqrt(n_bin)
-# -----------------------------------------------------------------------------
-
-# -----------------------------------------------------------------------------
-# get the rms RM error in each bin: 
-sig_rm_err = np.array([np.std(rm_err[idx_bin == j]) for j in range(1, len(bins))])
-# get the rms GRM error in each bin:
-sig_grm_err= np.array([np.std(grm_err[idx_bin == j]) for j in range(1, len(bins))])
-
-# get the error corrected RRM rms in each bin:
-sig_rrm = np.sqrt(sig_rrm_obs**2 - sig_rm_err**2 - sig_grm_err**2)
-# -----------------------------------------------------------------------------
-
-# -----------------------------------------------------------------------------
-# calculate standard error on each rms:
-se1 = standard_error_on_variance(sig_rrm_obs, n_bin)
-se2 = standard_error_on_variance(sig_rm_err, n_bin)
-se3 = standard_error_on_variance(sig_grm_err, n_bin)
-
-# calculate the overall standard error on the corrected RRM rms:
-ste_sig = np.sqrt((1/(2*sig_rrm))**2*(se1**2+se2**2+se3**2))
-# -----------------------------------------------------------------------------
-
-pl.rcParams["figure.figsize"] = (20,5)
-pl.subplot(121)
-pl.scatter(z, rrm, s=1, c='black')
-pl.errorbar(mu_bin, mu_rrm, yerr=ste_rrm, xerr=0.5*np.diff(bins), c='red', ls='', capsize=3.)
-pl.xlabel('z')
-pl.ylabel(r'RRM [rad m$^{-2}$')
-pl.ylim(-40,40)
-#pl.title("Figure 4 (top)")
-
-
-pl.subplot(122)
-pl.scatter(z, np.abs(rrm), s=1, c='black')
-pl.errorbar(mu_bin, sig_rrm, yerr=ste_sig, xerr=0.5*np.diff(bins), c='red', ls='', capsize=3.)
-pl.xlabel('z')
-pl.ylabel(r'RRM rms [rad m$^{-2}$')
-pl.ylim(0,40)
-#pl.title("Figure 4 (bottom)")
-
-pl.savefig("./plots/mightee_rrm_z_number.png")
+pl.savefig("./plots/mightee_rrm_z.png")
 pl.close()
 
 # create table:
@@ -529,7 +434,8 @@ if verbose:
     print("Spearman rank coeff: {:.3f}".format(stats.spearmanr(mu_bin, df["C3 rms"]).statistic))
 
     print(" C3 & {:.2f}$\pm${:.2f} & {:.2f}$\pm${:.2f} & {:.2f} & {:.2f}".format(m_ml, np.sqrt(ih[0,0]), b_ml, np.sqrt(ih[1,1]), m_ml/np.sqrt(ih[0,0]), stats.spearmanr(mu_bin, df["C3 rms"]).statistic))
-
+    sig_rrm_c3 = df["C3 rms"].values; ste_sig_c3 = df["C3 sig"].values
+    
 # -----------------------------------------------------------------------------
 
 print(">--------<")
@@ -549,3 +455,32 @@ if verbose: print(df.to_latex())
 # -----------------------------------------------------------------------------
 # step 9: 
 if verbose: print("--- \n >>> Filament analysis")
+
+np.random.seed(42)
+nll = lambda *args: -log_likelihood_fil(*args)
+initial = np.array([0., 1., 0.]) + 0.1 * np.random.randn(3)
+soln = minimize(nll, initial, args=(mu_bin, sig_rrm_c3, ste_sig_c3))
+m_ml, b_ml, log_f_ml = soln.x
+ih = soln.hess_inv
+
+print("Maximum likelihood estimates:")
+print("m = {:.2f}+/-{:.2f}".format(m_ml, np.sqrt(ih[0,0])))
+print("b = {:.2f}+/-{:.2f}".format(b_ml, np.sqrt(ih[1,1])))
+print("f = {:.2f}+/-{:.2f}".format(np.exp(log_f_ml), np.sqrt(ih[2,2])))
+
+model = m_ml*N_f(mu_bin)**0.5+b_ml
+pl.errorbar(mu_bin, sig_rrm_c3, ste_sig_c3, xerr=0.5*np.diff(bins), c='green', ls='dashdot', capsize=3.)
+pl.plot(mu_bin, model, c='orange')
+pl.xlabel('z')
+pl.ylabel('RRM0 (C3) rms [rad/m^2]')
+pl.ylim(0,35)
+pl.savefig('./plots/mightee_filament.png')
+pl.close()
+
+# -----------------------------------------------------------------------------
+# b-field calculation
+ne = 1e-5
+ell = 3e6*(np.pi/2)
+B_para = m_ml/(0.81*ne*ell)
+B_para_err = np.sqrt(ih[0,0])/(0.81*ne*ell)
+print("Magnetic field strength: {:.2f}+/-{:.2f} nG".format(B_para*1e3, B_para_err*1e3))
